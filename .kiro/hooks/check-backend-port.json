@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Check Backend Port & Report Startup Commands",
+      "trigger": "PostFileSave",
+      "description": "When a file under backend/ or frontend/ is saved, checks if backend port 8000 is active and reports startup commands for both services.",
+      "matcher": "(backend|frontend)[\\\\/]",
+      "action": {
+        "type": "command",
+        "command": "powershell -NoProfile -Command \"try { $conn = Test-NetConnection -ComputerName localhost -Port 8000 -WarningAction SilentlyContinue; if ($conn.TcpTestSucceeded) { Write-Output '[OK] Backend port 8000 is active and responding.'; Write-Output ''; Write-Output '--- Startup Commands ---'; Write-Output 'Backend: .\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000'; Write-Output 'Frontend: npm run dev (in frontend/ folder)'; } else { Write-Output '[WARN] Backend port 8000 is NOT responding.'; Write-Output ''; Write-Output 'Please start the backend first:'; Write-Output '  cd backend'; Write-Output '  .\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000'; Write-Output ''; Write-Output 'Then start frontend:'; Write-Output '  cd frontend'; Write-Output '  npm run dev'; } } catch { Write-Output '[ERROR] Could not check port 8000. Please verify manually.'; Write-Output ''; Write-Output 'Backend: .\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000'; Write-Output 'Frontend: npm run dev'; }\"",
+        "timeout": 30
+      }
+    }
+  ]
+}

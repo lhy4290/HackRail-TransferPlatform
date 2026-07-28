@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Claude Code 本機工具設定，非專案原始碼
+.claude/
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.hypothesis/
+backend/*.egg-info/
+backend/data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/dist-static/
+
+# 部署用 Dockerfile 於 build 階段自動產生，不需版本控制
+backend/app/static/

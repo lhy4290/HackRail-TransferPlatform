@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Build Static No-API Version",
+      "trigger": "PostFileSave",
+      "description": "When files under backend/ or frontend/ are saved, triggers a static build that uses mock data and doesn't require any API or .env credentials.",
+      "matcher": "(backend|frontend)[\\\\/]",
+      "action": {
+        "type": "command",
+        "command": "powershell -NoProfile -Command \"Write-Output 'Generating static no-API build...'; Set-Location frontend; npm run build:static 2>&1; if ($LASTEXITCODE -eq 0) { Write-Output '[OK] Static (no-API) build generated at frontend/dist-static/'; } else { Write-Output '[WARN] Static build failed. Check build:static script in package.json.'; }\"",
+        "timeout": 120
+      }
+    }
+  ]
+}

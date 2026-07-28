@@ -1,0 +1,11 @@
+:root {
+  font-family: "Fira Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #f8fafc;
+}

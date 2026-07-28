@@ -1,0 +1,15 @@
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.hypothesis
+**/*.egg-info
+frontend/dist
+backend/app/static
+backend/data
+backend/tests
+.env
+**/.env
+**/.env.bak
+.git
