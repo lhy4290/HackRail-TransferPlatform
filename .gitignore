@@ -22,3 +22,4 @@ frontend/dist-static/
 
 # 部署用 Dockerfile 於 build 階段自動產生，不需版本控制
 backend/app/static/
+frontend/tsconfig.tsbuildinfo
