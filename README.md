@@ -15,3 +15,27 @@ A cross-transport transfer information platform built for the HackRail hackathon
 
 Four-layer design: **Data → Integration → Application Logic → Presentation**
 
+
+Adding a new transport mode only requires a new adapter subclass + `FieldSpec` — no changes to existing adapter logic.
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- (Optional) TDX API credentials — [register here](https://tdx.transportdata.tw/) — only needed for live data; see **Demo Mode** below to run without any credentials.
+
+### Backend
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+
+# Optional: enable live TDX data
+# create backend/.env with:
+#   TDX_CLIENT_ID=your_client_id
+#   TDX_CLIENT_SECRET=your_client_secret
+
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
