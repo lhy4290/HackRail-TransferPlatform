@@ -63,8 +63,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t hackrail:ci .
       # 有已修補的 Critical 弱點就讓 CI 失敗
-      # 強化：正式環境應把第三方 action 釘在 commit SHA，而不是版本標籤
-      - uses: aquasecurity/trivy-action@0.28.0
+      # 第三方 action 釘在 commit SHA：標籤可被刪除或改指向（舊標籤 0.28.0 已被上游移除，CI 曾因此失敗）
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: hackrail:ci
           severity: CRITICAL
