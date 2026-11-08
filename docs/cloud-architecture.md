@@ -3,21 +3,24 @@
 > 國泰金控「雲端技術暨專案實習生」面試前實作測驗
 > 程式語言：Python（FastAPI）＋ TypeScript（React）｜雲端平台：AWS｜IaC：Terraform｜CI/CD：GitHub Actions
 
+**線上網址**：https://d1woox6ec5bt9l.cloudfront.net
+**部署手冊**：[infra/README.md](../infra/README.md)
+
 ---
 
 ## 0. 題目要求對照表
 
 | 題目要求 | 本專案的對應成果 | 位置 |
 |---|---|---|
-| 雲端後端架構（放置 Java / Python 程式） | FastAPI 後端容器化，部署於 AWS ECS Fargate | `backend/`、`Dockerfile` |
-| 雲端架構圖 | 第 3 節架構圖（另匯出 PNG） | `docs/images/architecture.png` |
+| 雲端後端架構（放置 Java / Python 程式） | FastAPI 後端容器化，部署於 AWS ECS Fargate（台北區域），已上線 | `backend/`、`Dockerfile` |
+| 雲端架構圖 | 第 3 節架構圖；正式版（AWS 官方圖示） | `docs/images/architecture.png`、原始檔 `docs/architecture.drawio` |
 | 程式用途、主要功能、服務選用原因 | 第 1、2、4 節 | 本文件 |
 | 加分 1：前端程式 | React + TypeScript + Vite 單頁應用，含地圖 | `frontend/` |
-| 加分 2：串接第三方 RESTful API | 交通部 TDX API（OAuth2，捷運／台鐵／高鐵） | `backend/app/adapters/` |
-| 加分 3：CI/CD 架構或流程圖 | GitHub Actions：測試 → 建置 → 推送 ECR → 部署 ECS | 第 5 節、`.github/workflows/` |
-| 加分 4：多人協作 Git 工作流程圖 | GitHub Flow ＋ 分支保護 ＋ PR 審查 | 第 6 節 |
-| 加分 5：IaC 建置雲端架構 | Terraform 模組化建置所有 AWS 資源 | 第 7 節、`infra/terraform/` |
-| 加分 6：AI 輔助開發與心得 | Kiro（規格驅動）＋ Claude Code（實作與測試） | 第 8 節 |
+| 加分 2：串接第三方 RESTful API | 交通部 TDX API（OAuth2，捷運／台鐵／高鐵），線上環境以真實資料運作 | `backend/app/adapters/` |
+| 加分 3：CI/CD 架構或流程圖 | GitHub Actions：PR 跑 CI，merge 後經 OIDC 自動部署到 ECS，已實際運作 | 第 5 節、`.github/workflows/` |
+| 加分 4：多人協作 Git 工作流程圖 | GitHub Flow ＋ 分支保護（必須通過 CI）＋ PR | 第 6 節 |
+| 加分 5：IaC 建置雲端架構 | Terraform 建置全部 AWS 資源（含 state bucket） | 第 7 節、`infra/` |
+| 加分 6：AI 輔助開發與心得 | Kiro（規格驅動）＋ Claude Code（實作、測試、雲端建置） | 第 9 節 |
 
 ---
 
@@ -43,6 +46,10 @@
 
 ## 3. 雲端架構圖
 
+![AWS 架構圖](images/architecture.png)
+
+> 正式版以 draw.io（AWS 官方圖示庫）繪製，原始檔為 [`docs/architecture.drawio`](architecture.drawio)。下方 Mermaid 版內容相同，GitHub 會直接顯示。
+
 ```mermaid
 flowchart LR
     user(["使用者瀏覽器"])
@@ -58,24 +65,25 @@ flowchart LR
         cf["CloudFront<br/>HTTPS / 快取靜態檔"]
         ecr["ECR<br/>容器映像倉庫"]
         sm["Secrets Manager<br/>TDX 憑證"]
-        cw["CloudWatch<br/>Logs / Metrics / Alarms"]
+        cw["CloudWatch<br/>Logs / Alarms"]
         sns["SNS<br/>告警通知 Email"]
         iam["IAM Role<br/>GitHub OIDC 部署角色"]
+        s3["S3<br/>Terraform state"]
 
         subgraph VPC["VPC 10.0.0.0/16（跨 2 個可用區）"]
             subgraph PUB["公有子網 ×2"]
                 alb["Application Load Balancer<br/>健康檢查 /api/health"]
                 subgraph ECS["ECS Cluster（Fargate）"]
                     task1["Task A<br/>FastAPI + React 靜態檔"]
-                    task2["Task B<br/>（Auto Scaling 擴充）"]
+                    task2["Task B<br/>（Auto Scaling 1–2）"]
                 end
             end
         end
     end
 
-    user -->|HTTPS| cf --> alb --> task1 & task2
-    task1 & task2 -->|"呼叫 API（OAuth2）"| tdx
-    task1 & task2 -.->|啟動時讀取| sm
+    user -->|HTTPS| cf -->|"HTTP＋密值標頭"| alb --> task1 & task2
+    task1 & task2 -->|"HTTPS（OAuth2）"| tdx
+    task1 & task2 -.->|啟動時注入| sm
     task1 & task2 -.->|日誌| cw
     cw -->|告警| sns
     repo --> gha
@@ -85,15 +93,14 @@ flowchart LR
     ECS -.->|pull image| ecr
 ```
 
-> 繳交時另用 draw.io（AWS 官方圖示庫）畫一張正式版，匯出成 `docs/images/architecture.png`；Mermaid 版保留在文件中，GitHub 會直接顯示。
-
 ### 請求流程
 
-1. 使用者透過 HTTPS 連到 **CloudFront**，前端靜態檔由 CloudFront 快取。
-2. `/api/*` 的請求轉給 **ALB**，ALB 依健康檢查結果分配到正常的 **Fargate Task**。
-3. Task 內的 FastAPI 呼叫 **TDX API** 取得資料，先查記憶體快取（靜態資料、即時資料、異常公告各有不同 TTL），沒有命中才打 TDX。
-4. TDX 憑證在 Task 啟動時由 ECS 從 **Secrets Manager** 注入成環境變數，程式碼與映像檔裡都沒有密鑰。
-5. 所有日誌送到 **CloudWatch Logs**；錯誤率或健康檢查異常時，**CloudWatch Alarm** 透過 **SNS** 寄 Email 通知。
+1. 使用者透過 HTTPS 連到 **CloudFront**，前端靜態檔由 CloudFront 快取；HTTP 會被 301 轉到 HTTPS。
+2. `/api/*` 的請求不快取，CloudFront 帶著一個只有它知道的 `X-Origin-Verify` 標頭轉給 **ALB**。
+3. ALB 依健康檢查結果分配到正常的 **Fargate Task**。
+4. Task 內的 FastAPI 先查記憶體快取（靜態資料、即時資料、異常公告各有不同 TTL），沒有命中才呼叫 **TDX API**。
+5. TDX 憑證在 Task 啟動時由 ECS 從 **Secrets Manager** 注入成環境變數，程式碼與映像檔裡都沒有密鑰。
+6. 日誌送到 **CloudWatch Logs**；5xx 過多或 Task 健康檢查失敗時，**CloudWatch Alarm** 透過 **SNS** 寄 Email。
 
 ---
 
@@ -102,36 +109,42 @@ flowchart LR
 | 服務 | 用途 | 為什麼選它 | 考慮過的替代方案 |
 |---|---|---|---|
 | **ECS Fargate** | 執行後端容器 | 專案已有 Dockerfile，容器化可確保本機與雲端環境一致；Fargate 不需管理 EC2 主機（不用自己更新 OS、打補丁） | **EC2**：要自己維運主機。**Lambda**：本服務有背景排程（SyncScheduler 定期同步 TDX）和記憶體快取，不適合無狀態、會冷啟動的 Lambda。**EKS**：功能強但對單一服務來說太複雜，控制平面每月固定約 USD 73 |
-| **ALB** | 負載平衡、健康檢查 | 依 `/api/health` 自動剔除異常 Task；搭配 ECS 做滾動更新，部署不停機 | NLB：第 4 層，不支援 HTTP 路徑層級的健康檢查 |
+| **ALB** | 負載平衡、健康檢查 | 依 `/api/health` 自動剔除異常 Task；搭配 ECS 做滾動更新，部署不停機；可依 HTTP 標頭決定是否轉送 | NLB：第 4 層，不支援 HTTP 路徑層級的健康檢查和標頭比對 |
 | **CloudFront** | HTTPS 入口、CDN | 不需購買網域就有預設 HTTPS 憑證；靜態檔就近快取；可再掛 AWS WAF 擋惡意流量 | 直接開 ALB：需要自有網域與 ACM 憑證才有 HTTPS |
-| **ECR** | 存放容器映像 | 與 ECS、IAM 整合，推送時可自動弱點掃描 | Docker Hub：公開倉庫有外洩疑慮，且有拉取次數限制 |
-| **Secrets Manager** | 存放 TDX 憑證 | 密鑰不進 Git、不進映像；以 IAM 控管誰能讀取，存取紀錄可在 CloudTrail 稽核 | SSM Parameter Store：較便宜，但沒有自動輪替功能 |
+| **ECR** | 存放容器映像 | 與 ECS、IAM 整合，推送時自動弱點掃描；標籤設為不可變更 | Docker Hub：公開倉庫有外洩疑慮，且有拉取次數限制 |
+| **Secrets Manager** | 存放 TDX 憑證 | 密鑰不進 Git、不進映像、不進 Terraform state；以 IAM 控管誰能讀取 | SSM Parameter Store：較便宜，但沒有自動輪替功能 |
 | **CloudWatch ＋ SNS** | 日誌、監控、告警 | AWS 原生，ECS 設定後日誌自動送入，不必另架監控系統 | Prometheus ＋ Grafana：要自己架設與維運 |
-| **IAM ＋ GitHub OIDC** | CI/CD 部署權限 | GitHub Actions 每次部署取得**臨時憑證**，不必把長期 Access Key 存在 GitHub；部署角色只給 ECR 推送與 ECS 更新的最小權限 | 長期 Access Key：外洩風險高，金融業資安稽核通常不允許 |
+| **IAM ＋ GitHub OIDC** | CI/CD 部署權限 | GitHub Actions 每次部署取得**約 1 小時的臨時憑證**，GitHub 上沒有任何長期 Access Key | 長期 Access Key：外洩風險高，金融業資安稽核通常不允許 |
+| **S3** | Terraform state | 開版本控制可還原；S3 原生鎖防止多人同時 apply | Terraform Cloud：多一個外部服務與帳號 |
 | **ap-east-2（台北）區域** | 部署區域 | 使用者都在台灣，延遲最低；資料留在國內，符合金融業對資料落地的要求 | ap-northeast-1（東京）：服務最齊全，可當備援 |
 
 ### 安全性設計（對應金融業要求）
 
-- **網路隔離**：Fargate Task 的 Security Group 只允許來自 ALB 的流量，外部無法直接連線到容器。
-- **最小權限**：分成兩個 IAM 角色。Task Execution Role 只能拉映像和讀取指定的 Secret；GitHub 部署角色只能推送 ECR 和更新指定的 ECS 服務。
-- **密鑰管理**：所有憑證放在 Secrets Manager，repo 內只有 `.env.example`。
-- **映像安全**：ECR 開啟推送時掃描，CI 也用 Trivy 掃描，有 Critical 弱點就中止部署。
-- **可稽核**：CloudTrail 記錄所有 API 操作，CloudWatch Logs 保留 30 天。
+| 面向 | 實際做法 |
+|---|---|
+| **網路隔離（兩層）** | ① ALB 的 Security Group 只放行 AWS 維護的 CloudFront 回源 IP 清單，直接連 ALB 會連線逾時（已實測）。② ALB Listener 比對 `X-Origin-Verify` 密值標頭，不符回 403，防止別人用自己的 CloudFront 繞過第一層。Task 的 Security Group 只接受 ALB；對外只開 443 |
+| **最小權限** | 不用 AWS 託管的 `AmazonECSTaskExecutionRolePolicy`（其 Resource 為 `*`），改成只限本專案的 ECR repo、Log Group、Secret。只有 `ecr:GetAuthorizationToken`、`ecs:RegisterTaskDefinition`、`ecs:DescribeTaskDefinition` 三個動作因 AWS 不支援資源層級權限而必須用 `*`。應用程式本身不呼叫 AWS API，所以沒有 Task Role |
+| **部署權限** | GitHub OIDC 角色的信任條件鎖定「這個 repo 的 `master` 分支」，PR、其他分支、fork 都換不到憑證；`iam:PassRole` 限定只能交給 ECS |
+| **密鑰管理** | Terraform 只建空的 Secret，值由人在 Console 填入，不會出現在程式碼、映像檔或 Terraform state。repo 內只有 `.env.example` |
+| **容器安全** | 以非 root 使用者（uid 10001）執行；ECR 推送時掃描；CI 用 Trivy 掃描，有已修補的 Critical 弱點就失敗；第三方 GitHub Action 釘在 commit SHA |
+| **可稽核** | CloudTrail 記錄所有 API 操作（本專案除錯 OIDC 時就是靠它，見第 8 節）；CloudWatch Logs 保留 30 天 |
 
 ### 設計取捨（面試時可主動說明）
 
 | 取捨 | 目前作法 | 理由 | 正式上線時的調整 |
 |---|---|---|---|
-| Task 放公有子網 | Task 有公有 IP，但 Security Group 只開放 ALB 進入 | 省下 NAT Gateway（每月約 USD 35 以上），Task 仍能連到外部的 TDX API | 改放私有子網＋ NAT Gateway，Task 完全不對外 |
-| 資料庫用 SQLite | 沿用容器內的 SQLite | 存的資料（API 呼叫紀錄、TDX 同步資料）都能從 TDX 重建，遺失也不影響服務 | 改用 RDS PostgreSQL（Multi-AZ）放私有子網 |
-| 記憶體快取 | 每個 Task 各自快取 | 實作簡單，單一 Task 就夠用 | 擴充到多個 Task 時，各 Task 會重複呼叫 TDX，可能觸發 TDX 的頻率限制。改用 ElastiCache Redis 共用快取，並把 SyncScheduler 拆成獨立的排程任務（EventBridge Scheduler） |
+| Task 放公有子網 | Task 有公有 IP，但 Security Group 只開放 ALB 進入 | 省下 NAT Gateway（每月約 USD 35 以上），Task 仍能連到外部的 TDX API | 改放私有子網＋ NAT Gateway（或 VPC Endpoint），Task 完全不對外 |
+| CloudFront → ALB 走 HTTP | 這段在 AWS 骨幹網路內，以 Security Group ＋ 密值標頭保護 | 沒有自有網域就無法在 ALB 掛 ACM 憑證 | 申請網域，ALB 掛 ACM 憑證改 HTTPS 回源 |
+| 資料庫用 SQLite | 沿用容器內的 SQLite | 存的資料（API 呼叫紀錄）都能從 TDX 重建，遺失也不影響服務 | 改用 RDS PostgreSQL（Multi-AZ）放私有子網 |
+| 記憶體快取 | 每個 Task 各自快取、各自跑 SyncScheduler | 實作簡單，單一 Task 就夠用 | 擴充到多個 Task 時，各 Task 會重複呼叫 TDX，容易觸發 TDX 的 429 限流（本機實測已遇到）。改用 ElastiCache Redis 共用快取，SyncScheduler 拆成獨立排程任務（EventBridge Scheduler） |
 | Auto Scaling 上限 | 最少 1、最多 2 個 Task，CPU 超過 60% 擴充 | 控制成本，同時展示擴充機制 | 依壓力測試（Locust）結果調整 |
+| Fargate 規格 | 0.5 vCPU／1 GB | 實測記憶體只用約 60 MB，規格保守 | 依實際負載降到 0.25 vCPU／512 MB 可再省約一半 |
 
 ### 未來演進架構
 
 ```mermaid
 flowchart LR
-    user(["使用者"]) --> waf["WAF"] --> cf["CloudFront"] --> alb["ALB"]
+    user(["使用者"]) --> waf["WAF"] --> cf["CloudFront"] --> alb["ALB（HTTPS）"]
     subgraph VPC
         subgraph 私有子網
             ecs["ECS Fargate<br/>API Service ×N"]
@@ -154,13 +167,14 @@ flowchart LR
 |---|---|---|
 | ECS Fargate | 0.5 vCPU／1 GB，24 小時 | ~18 |
 | ALB | 1 個，低流量 | ~18 |
+| 公有 IPv4 位址 | ALB ×2、Task ×1 | ~11 |
 | CloudFront | 低流量（免費額度內） | ~0 |
 | ECR | < 1 GB | ~0.1 |
 | Secrets Manager | 1 個 Secret | ~0.4 |
-| CloudWatch | 少量日誌 | ~1 |
-| **合計** | | **約 USD 38／月** |
+| CloudWatch | 少量日誌、2 個 Alarm | ~1 |
+| **合計** | | **約 USD 48／月** |
 
-> 費用為估計值，實際以 AWS Pricing Calculator 為準。面試結束後執行 `terraform destroy` 一鍵刪除所有資源，避免持續計費。
+> 費用為估計值，實際以 AWS Pricing Calculator 為準。另設 AWS Budgets 每月 USD 10 警示。面試結束後執行 `terraform destroy` 刪除所有資源。
 
 ---
 
@@ -172,73 +186,85 @@ flowchart TD
 
     subgraph ci["CI：Pull Request 階段（ci.yml）"]
         b1["後端：pytest<br/>（含 Hypothesis 屬性測試）"]
-        f1["前端：tsc 型別檢查＋vitest＋build"]
-        t1["Terraform：fmt / validate / plan"]
+        f1["前端：vitest＋tsc 型別檢查＋build"]
+        t1["Terraform：fmt / validate"]
         s1["Docker build ＋ Trivy 弱點掃描"]
     end
 
-    ci -->|全部通過＋至少 1 人 Review| merge["Merge 到 main"]
+    ci -->|"4 項檢查全部通過<br/>（分支保護強制）"| merge["Merge 到 master"]
     merge --> cd
 
-    subgraph cd["CD：main 分支階段（deploy.yml）"]
+    subgraph cd["CD：master 分支階段（deploy.yml）"]
+        c0["再跑一次完整 CI"]
         c1["以 OIDC 取得 AWS 臨時憑證"]
         c2["Docker build，標籤為 git commit SHA"]
         c3["Push 至 ECR"]
-        c4["更新 ECS Task Definition"]
-        c5["ECS 滾動更新<br/>新 Task 通過健康檢查才換掉舊 Task"]
-        c6["Smoke Test：GET /api/health"]
-        c1 --> c2 --> c3 --> c4 --> c5 --> c6
+        c4["註冊新 Task Definition"]
+        c5["ECS 滾動更新<br/>新 Task 通過健康檢查才停舊 Task"]
+        c6["清除 CloudFront 上的 index.html"]
+        c7["Smoke Test：GET /api/health"]
+        c0 --> c1 --> c2 --> c3 --> c4 --> c5 --> c6 --> c7
     end
 
-    c6 -->|失敗| rb["ECS Circuit Breaker<br/>自動回滾到上一版"]
-    c6 -->|成功| done["部署完成"]
+    c5 -->|新 Task 一直起不來| rb["ECS Circuit Breaker<br/>自動回滾到上一版"]
+    c7 -->|成功| done["部署完成"]
 ```
 
 設計重點：
 
-- **映像標籤用 commit SHA，不用 `latest`**：每個版本都能追溯到對應的程式碼，回滾時直接指定舊 SHA。
-- **部署不停機**：ECS 滾動更新搭配 ALB 健康檢查，新版本健康才切換流量。
-- **自動回滾**：開啟 ECS Deployment Circuit Breaker，新版本一直起不來就自動退回上一版。
-- **基礎架構變更也要 Review**：PR 上自動跑 `terraform plan` 並把結果貼到 PR 留言，審查者看得到這次會新增或刪除哪些資源。
+- **映像標籤用 commit SHA，不用 `latest`**：每個版本都能追溯到對應的程式碼；ECR 標籤設為不可變更，推過就不能被覆蓋。
+- **部署不停機**：`minimum_healthy_percent = 100`，新 Task 通過 ALB 健康檢查後才停掉舊的。實際部署時 ECS 事件紀錄可看到「新 Task 註冊 → 舊 Task draining → 停止」。
+- **自動回滾**：開啟 ECS Deployment Circuit Breaker，新版本一直起不來就自動退回上一版，`deploy.yml` 會因等不到服務穩定而失敗。
+- **職責分開**：Terraform 管基礎架構和第一版 Task Definition；之後的映像版本由 CI/CD 更新，Terraform 用 `ignore_changes` 避免把它改回去。
+- **同時只跑一個部署**：`concurrency` 設定讓後到的部署排隊，不會取消正在跑的。
 
 ---
 
 ## 6. 多人協作 Git 工作流程
 
-採用 **GitHub Flow**：`main` 永遠是可部署的狀態，所有變更都從 feature 分支開 PR 合併。
+採用 **GitHub Flow**：`master` 永遠是可部署的狀態，所有變更都從短期分支開 PR 合併。下圖是本專案實際的分支歷史：
 
 ```mermaid
+%%{init: {'gitGraph': {'mainBranchName': 'master'}}}%%
 gitGraph
-    commit id: "init"
-    branch feature/route-planner
-    checkout feature/route-planner
-    commit id: "feat: Dijkstra"
-    commit id: "test: properties"
-    checkout main
-    branch feature/terraform-infra
-    checkout feature/terraform-infra
-    commit id: "feat: VPC + ECS"
-    checkout main
-    merge feature/route-planner id: "PR #1 merged"
-    checkout feature/terraform-infra
-    commit id: "fix: review 意見"
-    checkout main
-    merge feature/terraform-infra id: "PR #2 merged" tag: "v1.0.0"
-    branch hotfix/tdx-timeout
-    checkout hotfix/tdx-timeout
-    commit id: "fix: TDX retry"
-    checkout main
-    merge hotfix/tdx-timeout id: "PR #3 merged" tag: "v1.0.1"
+    commit id: "Initial commit"
+    commit id: "chore: tsbuildinfo"
+    branch feature/cloud-deploy
+    checkout feature/cloud-deploy
+    commit id: "fix: 新容器載入 0 站"
+    commit id: "feat: Terraform + CI/CD"
+    commit id: "docs(infra)"
+    checkout master
+    commit id: "README（GitHub 網頁編輯）"
+    checkout feature/cloud-deploy
+    commit id: "ci: 釘選 Trivy SHA"
+    checkout master
+    merge feature/cloud-deploy id: "PR #1"
+    branch fix/oidc-sub-claim
+    checkout fix/oidc-sub-claim
+    commit id: "fix: OIDC sub 格式"
+    checkout master
+    merge fix/oidc-sub-claim id: "PR #2"
+    branch docs/stage5
+    checkout docs/stage5
+    commit id: "docs: 架構文件與架構圖"
+    checkout master
+    merge docs/stage5 id: "PR #3" tag: "v1.0.0"
 ```
 
-| 規範 | 內容 |
+| 規範 | 本專案做法 |
 |---|---|
-| 分支命名 | `feature/*` 新功能、`fix/*` 一般修正、`hotfix/*` 緊急修正、`docs/*` 文件 |
-| Commit 訊息 | Conventional Commits：`feat:`、`fix:`、`docs:`、`test:`、`chore:` |
-| `main` 分支保護 | 禁止直接 push；PR 必須 CI 全部通過且至少 1 人 Approve 才能合併 |
-| 合併方式 | Squash merge，讓 `main` 的歷史一個 PR 一個 commit |
+| 分支命名 | `feature/*` 新功能、`fix/*` 修正、`docs/*` 文件 |
+| Commit 訊息 | Conventional Commits：`feat:`、`fix:`、`docs:`、`ci:`、`chore:` |
+| `master` 分支保護 | 必須透過 PR 合併；4 項 CI 檢查全部通過才能 merge |
+| 合併方式 | Merge commit，保留分支上每個 commit（例如 PR #1 中「CI 失敗 → 修正」的過程可追溯） |
 | 版本 | 上線版本打 Git tag（`v1.0.0`，語意化版本） |
-| 程式碼擁有者 | `CODEOWNERS` 指定 `infra/` 變更必須由負責雲端的成員審查 |
+
+**團隊情境下會再加上**（本專案為一人開發，故未啟用）：
+
+- PR 至少 1 人 Approve，且勾選「管理員也不能繞過」
+- `CODEOWNERS` 指定 `infra/` 的變更必須由負責雲端的成員審查
+- PR 上自動執行 `terraform plan` 並把結果貼到留言，審查者看得到這次會新增或刪除哪些資源
 
 選擇 GitHub Flow 而非 Git Flow 的原因：本專案搭配 CI/CD 持續部署，不需要 `develop`、`release` 等長期分支；分支越少，合併衝突越少，適合小團隊快速迭代。
 
@@ -249,63 +275,102 @@ gitGraph
 ### 目錄結構
 
 ```
-infra/terraform/
-├── main.tf              # provider、後端狀態設定
-├── variables.tf         # 區域、映像標籤、Task 規格等參數
-├── outputs.tf           # 輸出 CloudFront 網址、ECR 位址
-├── network.tf           # VPC、2 個公有子網、Internet Gateway、Security Groups
-├── ecr.tf               # 映像倉庫（推送時掃描、保留最近 10 版）
-├── ecs.tf               # Cluster、Task Definition、Service、Auto Scaling
-├── alb.tf               # ALB、Target Group（健康檢查 /api/health）、Listener
-├── cloudfront.tf        # CloudFront Distribution（/api/* 不快取）
-├── secrets.tf           # Secrets Manager（只建立空殼，值由人工填入）
-├── iam.tf               # Task Execution Role、GitHub OIDC 部署角色
-└── monitoring.tf        # CloudWatch Log Group、Alarms、SNS Topic
+infra/
+├── README.md               # 部署手冊（PowerShell 逐步指令）
+├── bootstrap/
+│   └── main.tf             # S3 state bucket（版本控制、加密、擋公開存取、只允許 HTTPS）
+└── terraform/
+    ├── versions.tf         # provider、S3 backend（原生鎖）
+    ├── variables.tf        # 區域、映像標籤、Task 規格、GitHub repo 等參數
+    ├── outputs.tf          # 網址、ECR 位址、要填到 GitHub 的變數
+    ├── network.tf          # VPC、2 個公有子網、IGW、Security Groups
+    ├── ecr.tf              # 映像倉庫（推送時掃描、標籤不可變更、保留 10 版）
+    ├── secrets.tf          # Secrets Manager（只建立空殼）
+    ├── iam.tf              # Task Execution Role（最小權限）
+    ├── alb.tf              # ALB、Target Group、Listener（密值標頭比對）
+    ├── ecs.tf              # Cluster、Task Definition、Service（Circuit Breaker）
+    ├── autoscaling.tf      # CPU 60% Target Tracking
+    ├── cloudfront.tf       # Distribution（/api/* 不快取）
+    ├── monitoring.tf       # Log Group、2 個 Alarm、SNS
+    └── github_oidc.tf      # GitHub OIDC Provider、部署角色
 ```
+
+共 35 個資源（不含 bootstrap）。每個 PR 的 CI 都會檢查 `terraform fmt` 與 `terraform validate`。
 
 ### 為什麼選 Terraform
 
 - **宣告式**：描述「想要的最終狀態」，Terraform 自動算出要新增、修改、刪除什麼。
-- **可審查**：基礎架構和程式碼一樣走 PR 流程，`terraform plan` 讓每次變更都看得到。
-- **可重現**：一行 `terraform apply` 就能在新帳號或新區域建出同一套環境；`terraform destroy` 一鍵刪除。
+- **可審查**：基礎架構和程式碼一樣走 PR 流程。例如 PR #2 修正 OIDC 信任條件時，`terraform plan` 明確顯示「0 新增、1 修改、0 刪除」。
+- **可重現**：在新帳號或新區域用同一套程式碼就能建出同樣的環境；`terraform destroy` 一次刪除。
 - **跨雲**：同一套工具也能管 Azure、GCP，業界普及度高。（AWS CDK 也是選項，但只限 AWS。）
 
-### 狀態管理
+### 部署順序（雞生蛋問題）
 
-Terraform state 存在 S3（開啟版本控制與加密），並用 S3 原生鎖定防止多人同時 apply 互相覆蓋。
+ECS 服務啟動時要拉映像、讀 Secret，但 ECR 和 Secret 要先建好才能放內容。所以分三步：
 
-### 部署指令
+1. `infra/bootstrap`：建 state bucket（它自己的 state 存本機）
+2. `terraform apply -target` 只建 ECR 和 Secret → 在 Console 填 TDX 憑證 → 推第一版映像
+3. `terraform apply` 建其餘 35 個資源
 
-```bash
-cd infra/terraform
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
-# 在 AWS Console 或用 CLI 將 TDX 憑證填入 Secrets Manager
-aws secretsmanager put-secret-value --secret-id hackrail/tdx --secret-string '{"TDX_CLIENT_ID":"...","TDX_CLIENT_SECRET":"..."}'
-```
+完整指令見 [infra/README.md](../infra/README.md)。
 
 ---
 
-## 8. AI 輔助開發工具使用說明與心得
+## 8. 實際部署驗證與遇到的問題
+
+### 驗證結果
+
+| 檢查項目 | 結果 |
+|---|---|
+| 本機容器（Demo 模式） | 2 秒啟動，記憶體約 50 MB |
+| 本機容器（真實 TDX 模式） | 順利時約 16 秒、遇到 TDX 429 限流時約 185 秒啟動；載入 1,881 個車站；記憶體約 60 MB |
+| 線上路線查詢 | 台北車站（機捷）→ 高雄車站（高雄捷運），回傳「機捷 → 高鐵 → 高雄捷運」5 條路線 |
+| 線上健康檢查 | `/api/health` 200，約 0.2 秒 |
+| CloudFront 快取 | 靜態檔第二次請求 `Hit from cloudfront`；`/api/*` 永遠 `Miss` |
+| HTTP → HTTPS | 301 轉址 |
+| 直接連 ALB | 連線逾時（Security Group 擋下） |
+| 自動部署 | PR #2 merge 後，GitHub Actions 推送新映像、ECS 滾動更新、Task Definition 由 `:1` 變 `:2`，全程無停機 |
+
+截圖：
+
+| 項目 | 圖片 |
+|---|---|
+| 線上網站查詢路線 | `docs/images/app.png` |
+| ECS 服務狀態 | `docs/images/ecs-service.png` |
+| GitHub Actions 部署流程 | `docs/images/github-actions.png` |
+| CloudWatch 日誌 | `docs/images/cloudwatch-logs.png` |
+| 告警 Email | `docs/images/alarm-email.png` |
+
+### 實際遇到的問題
+
+| # | 現象 | 原因 | 解法 | 學到的事 |
+|---|---|---|---|---|
+| 1 | 本機容器以真實 TDX 模式啟動，日誌寫「使用 TDX 真實資料啟動」，但車站數是 **0** | 啟動時先向 TDX 抓資料、之後才建 SQLite 資料表；每次呼叫 TDX 都會寫紀錄到不存在的資料表而拋例外，連帶把抓到的站點丟掉。開發機一直有舊的資料庫檔，96 個測試都沒抓到 | 擷取前先建表；呼叫紀錄寫入失敗只記警告，不影響 API 請求；補上測試 | 測試環境和雲端「全新容器」的狀態不同。上雲前在本機用全新容器跑一次很重要 |
+| 2 | PR 的 Trivy 掃描 2 秒就失敗 | 上游把 `trivy-action@0.28.0` 這個標籤刪掉了 | 改釘 v0.36.0 的 commit SHA | 版本標籤是可變的，可能被刪除或被改指向惡意程式碼；有部署權限的 CI 更應釘 SHA |
+| 3 | 第一次自動部署在「OIDC 登入 AWS」失敗 | GitHub 送出的身分改為帶數字 ID 的格式（`repo:owner@id/repo@id:ref:…`），和信任條件寫的舊格式不符 | 查 **CloudTrail** 被拒絕的 `AssumeRoleWithWebIdentity` 事件看到實際格式，信任條件改為兩種格式都完全比對 | 最小權限的信任條件確實在把關；CloudTrail 是排查權限問題的第一個工具 |
+| 4 | Windows 上 `docker login` 到 ECR 失敗 | PowerShell 5.1 管線多送換行；ECR 權杖太長存不進 Windows 認證管理員 | 第一版映像改用暫時的 Docker 設定檔推送；之後由 GitHub Actions（Linux）推送 | 自動化部署也避開了「每個人電腦環境不同」的問題 |
+| 5 | 健康檢查寬限時間原本設 180 秒 | 實測真實模式遇到 TDX 429 限流時啟動要 185 秒 | 調為 300 秒 | 設定值要用實測數據決定，不是憑感覺 |
+
+---
+
+## 9. AI 輔助開發工具使用說明與心得
 
 | 工具 | 使用階段 | 使用方式 |
 |---|---|---|
 | **Kiro** | 需求與設計 | 規格驅動開發：先產生 `requirements.md`（需求與驗收條件）、`design.md`（四層架構與 21 條正確性屬性）、`tasks.md`（14 項實作任務），再依任務逐項實作。規格存放在 `.kiro/specs/` |
-| **Claude Code** | 實作、測試、雲端建置 | 依規格實作後端 Adapter、路線演算法與前端元件；撰寫 pytest ＋ Hypothesis 屬性測試；產生 Terraform 與 GitHub Actions 設定，並逐一檢查每個資源與權限 |
+| **Claude Code** | 實作、測試、雲端建置 | 依規格實作後端 Adapter、路線演算法與前端元件；撰寫 pytest ＋ Hypothesis 屬性測試；產生 Terraform 與 GitHub Actions 設定，並在本機容器與真實 AWS 上逐步驗證 |
 
-### 心得（草稿，請改成你自己的經驗）
-
-> 以下是撰寫方向。只寫你真的遇到過的事，面試時會被追問。
+### 心得
 
 1. **先寫規格再寫程式，AI 的輸出比較穩定**：有明確的需求與驗收條件，AI 產生的程式碼比較不會偏離目標，也比較好檢查。
-2. **用測試驗證 AI 的程式碼**：例如路線規劃演算法，用 Hypothesis 屬性測試驗證「回傳路線依時間排序」「至少一條跨運具」等條件，不只看程式碼「看起來對」。
-3. **AI 不知道外部 API 的真實狀況**：TDX 台鐵、高鐵的 AlertInfo 端點實際呼叫會回 404，只有實際打真實 API 才發現，目前只有捷運的異常通報確認可用。
-4. **雲端設定要逐行看懂**：（實作 Terraform 時補上）檢查 AI 產生的 IAM Policy 權限範圍是否過寬（例如 `"Resource": "*"`），有的話記錄你怎麼縮小權限。
+2. **用測試驗證 AI 的程式碼，但測試也有盲點**：路線規劃用 Hypothesis 屬性測試驗證「依時間排序」「至少一條跨運具」等條件。但第 8 節問題 1 證明，測試在「已經有資料庫檔」的開發環境跑，抓不到全新容器才會發生的錯誤，最後是實際跑容器才發現。
+3. **AI 不知道外部世界的最新狀態**：AI 寫的 OIDC 信任條件用的是舊格式、選用的 Trivy 版本標籤已被刪除、TDX 台鐵／高鐵的 AlertInfo 端點實際會回 404。這些都只有實際執行才會發現，所以每一步都要在真實環境驗證，不能只看程式碼「看起來對」。
+4. **雲端設定要逐行看懂，尤其是權限**：檢查每個 IAM Policy，把 AWS 託管政策的 `"Resource": "*"` 改成只限本專案的資源；只留下 AWS 規定必須用 `*` 的 3 個動作，並在程式碼註解說明原因。
+5. **人負責會產生費用和影響安全的決定**：AWS 帳號、MFA、金鑰、`terraform apply`、GitHub 分支保護都由我親自操作；AI 負責寫程式、跑檢查、整理證據。
 
 ---
 
-## 9. 本機執行
+## 10. 本機執行
 
 ```bash
 # 不需任何憑證：未設定 TDX 憑證時自動進入 Demo 模式，使用內建快照資料

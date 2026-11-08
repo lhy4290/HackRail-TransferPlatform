@@ -1,5 +1,29 @@
 # HackRail 轉乘通 — Cross-Transport Transfer Platform
 
+[![Deploy](https://github.com/lhy4290/HackRail-TransferPlatform/actions/workflows/deploy.yml/badge.svg)](https://github.com/lhy4290/HackRail-TransferPlatform/actions/workflows/deploy.yml)
+
+## 雲端部署（國泰金控雲端技術暨專案實習生 實作測驗）
+
+**線上網址**：https://d1woox6ec5bt9l.cloudfront.net　（AWS 台北區域，真實 TDX 資料）
+
+![AWS 架構圖](docs/images/architecture.png)
+
+| 題目要求 | 對應成果 |
+|---|---|
+| 雲端後端架構（Python） | FastAPI 容器部署於 AWS ECS Fargate，前面接 ALB 與 CloudFront |
+| 雲端架構圖 | 上圖；原始檔 [`docs/architecture.drawio`](docs/architecture.drawio) |
+| 程式用途、功能、服務選用原因 | [docs/cloud-architecture.md](docs/cloud-architecture.md) 第 1、2、4 節 |
+| 加分：前端程式 | React + TypeScript + Vite（[`frontend/`](frontend/)） |
+| 加分：串接第三方 RESTful API | 交通部 TDX API，OAuth2（[`backend/app/adapters/`](backend/app/adapters/)） |
+| 加分：CI/CD | GitHub Actions：PR 跑測試與掃描，merge 後經 OIDC 自動部署（[`.github/workflows/`](.github/workflows/)） |
+| 加分：Git 協作流程 | GitHub Flow ＋ 分支保護（架構文件第 6 節） |
+| 加分：IaC | Terraform 建置全部 AWS 資源（[`infra/`](infra/)，部署手冊 [infra/README.md](infra/README.md)） |
+| 加分：AI 輔助開發心得 | 架構文件第 9 節 |
+
+完整說明（架構、安全設計、設計取捨、成本、實際遇到的問題）：**[docs/cloud-architecture.md](docs/cloud-architecture.md)**
+
+---
+
 A cross-transport transfer information platform built for the HackRail hackathon, unifying Taiwan's fragmented rail systems — Metro (Taoyuan/Taichung/Kaohsiung), TRA, and THSR — into a single trip-planning experience. Enter an origin and destination, and the platform integrates real-time arrival/departure data across operators, automatically plans the best multi-modal transfer route, and predicts transfer risk from historical delay data so travelers know which connections to worry about.
 
 ## Features
