@@ -14,6 +14,8 @@ from app.models.enums import CachePolicy
 from app.services.demo_snapshot import DEMO_SNAPSHOT_PATH
 from app.services.sync_scheduler import SyncScheduler
 
+# uvicorn 只設定自己的 logger；這裡讓 app.* 的 INFO 也輸出，雲端日誌才看得出以哪種模式啟動
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
     if credentials is not None:
         try:
             state = await build_app_state_from_tdx(credentials.client_id, credentials.client_secret)
+            logger.info("使用 TDX 真實資料啟動")
         except Exception:
             logger.exception("TDX 資料匯入失敗，改以 Demo 快照或空狀態啟動")
             state = _build_fallback_state()
