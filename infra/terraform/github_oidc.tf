@@ -3,7 +3,11 @@
 
 locals {
   github_oidc_url = "token.actions.githubusercontent.com"
-  github_oidc_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+  github_owner    = split("/", var.github_repo)[0]
+  github_reponame = split("/", var.github_repo)[1]
+  # 例：lhy4290@155805623/HackRail-TransferPlatform@1314998535
+  github_repo_with_ids = "${local.github_owner}@${var.github_owner_id}/${local.github_reponame}@${var.github_repo_id}"
+  github_oidc_arn      = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -29,10 +33,16 @@ data "aws_iam_policy_document" "github_assume" {
       variable = "${local.github_oidc_url}:aud"
       values   = ["sts.amazonaws.com"]
     }
+    # GitHub 的 sub 有兩種格式，兩種都完全比對：
+    #   舊：repo:owner/repo:ref:refs/heads/master
+    #   新：repo:owner@<owner_id>/repo@<repo_id>:ref:refs/heads/master（帶數字 ID，同名新 repo 對不上）
     condition {
       test     = "StringEquals"
       variable = "${local.github_oidc_url}:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/${var.github_branch}"]
+      values = [
+        "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}",
+        "repo:${local.github_repo_with_ids}:ref:refs/heads/${var.github_branch}",
+      ]
     }
   }
 }

@@ -61,6 +61,18 @@ variable "github_repo" {
   default     = "lhy4290/HackRail-TransferPlatform"
 }
 
+variable "github_owner_id" {
+  description = "GitHub 帳號的數字 ID（新版 OIDC sub 會帶 owner@id/repo@id，防 repo 改名後被同名 repo 冒用）"
+  type        = string
+  default     = "155805623"
+}
+
+variable "github_repo_id" {
+  description = "GitHub repo 的數字 ID"
+  type        = string
+  default     = "1314998535"
+}
+
 variable "github_branch" {
   description = "只有這個分支的 workflow 能取得部署角色"
   type        = string
