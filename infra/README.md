@@ -44,7 +44,7 @@ ECS 啟動時要拉映像、讀 Secret，所以這兩個要先建好、先放內
 
 ```powershell
 Copy-Item terraform.tfvars.example terraform.tfvars   # 填 alert_email，image_tag 先不管
-terraform init -backend-config=backend.hcl
+terraform init "-backend-config=backend.hcl"   # PowerShell 要加引號
 terraform apply -target="aws_ecr_repository.app" -target="aws_ecr_lifecycle_policy.app" -target="aws_secretsmanager_secret.tdx"
 ```
 
@@ -56,11 +56,22 @@ terraform apply -target="aws_ecr_repository.app" -target="aws_ecr_lifecycle_poli
 $REGION = "ap-east-2"
 $REPO   = terraform output -raw ecr_repository_url
 $TAG    = git rev-parse HEAD
-aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $REPO.Split('/')[0]
+$REG    = $REPO.Split('/')[0]
 docker build -t "${REPO}:${TAG}" ../..
+
+# Windows 上 `docker login` 對 ECR 會失敗（PowerShell 5.1 管線多送換行；ECR 權杖太長存不進
+# Windows 認證管理員），所以改用暫時的 Docker 設定檔直接放權杖，推完就刪
+$cfg = Join-Path $env:TEMP "ecr-docker-cfg"; New-Item -ItemType Directory -Force $cfg | Out-Null
+$pw  = (aws ecr get-login-password --region $REGION).Trim()
+$b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("AWS:$pw"))
+[IO.File]::WriteAllText("$cfg\config.json", '{"auths":{"' + $REG + '":{"auth":"' + $b64 + '"}}}')
+$env:DOCKER_CONFIG = $cfg; $env:DOCKER_HOST = "npipe:////./pipe/dockerDesktopLinuxEngine"
 docker push "${REPO}:${TAG}"
+Remove-Item -Recurse -Force $cfg; Remove-Item Env:DOCKER_CONFIG, Env:DOCKER_HOST
 echo $TAG    # 把這個值填到 terraform.tfvars 的 image_tag
 ```
+
+之後的版本都由 GitHub Actions（Linux）推送，不會遇到這個問題。
 
 ## 5. 建立其餘資源
 
@@ -71,7 +82,7 @@ terraform output
 
 - 收信並點 SNS 訂閱確認連結
 - 打開 `app_url`，查一條路線
-- 直接連 `http://<alb_dns_name>` 應該回 **403**（證明只能從 CloudFront 進來）
+- 直接連 `http://<alb_dns_name>` 應該**連線逾時**：Security Group 只放行 CloudFront 的 IP，你的封包根本到不了 ALB。（第二層的標頭檢查只會在「來自 CloudFront IP 但標頭不對」時回 403）
 - 確認是真實模式：`aws logs tail /ecs/hackrail --since 15m`，應看到「使用 TDX 真實資料啟動」，而不是「使用 Demo 快照啟動」或「TDX 資料匯入失敗」
 - 測告警：`aws cloudwatch set-alarm-state --alarm-name hackrail-unhealthy-hosts --state-value ALARM --state-reason "test"`，確認收到信
 

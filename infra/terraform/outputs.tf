@@ -17,7 +17,7 @@ output "log_group" {
 }
 
 output "alb_dns_name" {
-  description = "直接連會回 403（只接受 CloudFront），用來驗證 ALB 有擋住"
+  description = "直接連會逾時（Security Group 只放行 CloudFront IP），用來驗證 ALB 有擋住"
   value       = aws_lb.app.dns_name
 }
 
