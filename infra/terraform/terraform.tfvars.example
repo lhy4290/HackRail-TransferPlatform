@@ -1,0 +1,10 @@
+# 複製成 terraform.tfvars（已被 .gitignore 排除）後修改
+aws_region  = "ap-east-2"
+image_tag   = "REPLACE_WITH_FIRST_PUSHED_COMMIT_SHA"
+alert_email = "you@example.com"
+
+# 帳號裡已有 GitHub OIDC provider 時改成 false
+# create_github_oidc_provider = false
+
+# TDX 憑證有問題時，改成 false 先用 Demo 模式上線
+# use_live_tdx = false

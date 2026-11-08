@@ -1,0 +1,72 @@
+name: CI
+
+# PR 時執行；deploy.yml 也會先呼叫這支，通過後才部署
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest tests/ -q
+
+  frontend:
+    name: Frontend (tsc + vitest + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build # tsc -b && vite build
+
+  terraform:
+    name: Terraform fmt / validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive infra
+      - name: Validate
+        run: |
+          for dir in infra/bootstrap infra/terraform; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+
+  docker:
+    name: Docker build + Trivy scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t hackrail:ci .
+      # 有已修補的 Critical 弱點就讓 CI 失敗
+      # 強化：正式環境應把第三方 action 釘在 commit SHA，而不是版本標籤
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hackrail:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
