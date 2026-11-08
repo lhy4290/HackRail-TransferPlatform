@@ -67,6 +67,8 @@ async def build_app_state_from_tdx(client_id: str, client_secret: str) -> AppSta
     步行距離/時間資料。
     """
     db = Database()
+    # 擷取期間每次 TDX 呼叫都會寫入 api_call_logs，全新環境（如雲端新容器）必須先建表
+    await db.init_schema()
     cache = CacheManager()
     graph = TransportGraph()
     planner = RoutePlanner(graph)

@@ -1,0 +1,3 @@
+# 複製成 backend.hcl，填入 infra/bootstrap 的 output
+bucket = "hackrail-tfstate-123456789012"
+region = "ap-east-2"

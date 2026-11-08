@@ -13,3 +13,10 @@ backend/tests
 **/.env
 **/.env.bak
 .git
+**/.env.*
+.github
+.kiro
+.claude
+infra
+docs
+submission

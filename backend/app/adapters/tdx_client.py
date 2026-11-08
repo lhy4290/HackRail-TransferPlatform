@@ -39,8 +39,13 @@ class TDXClient:
 
     async def _log_call(self, endpoint: str, response_time_ms: int, status_code: int, error_message: Optional[str]) -> None:
         """記錄單次 API 呼叫之回應時間與錯誤率統計（需求 9.5）"""
-        if self._log_fn is not None:
+        if self._log_fn is None:
+            return
+        # 呼叫紀錄只是統計用途，寫入失敗（例如資料表尚未建立）不可讓真正的 API 請求跟著失敗
+        try:
             await self._log_fn(endpoint, response_time_ms, status_code, error_message)
+        except Exception:
+            logger.warning("API 呼叫紀錄寫入失敗：%s", endpoint, exc_info=True)
 
     async def authenticate(self) -> str:
         """取得或刷新 OAuth access token"""
