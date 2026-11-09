@@ -71,6 +71,8 @@ jobs:
           service: ${{ vars.ECS_SERVICE }}
           wait-for-service-stability: true
           wait-for-minutes: 15
+          # 不設的話查詢間隔會指數拉長（最長 10 分鐘），5 分多鐘就會因「下次查詢會超過上限」提早判定逾時
+          wait-max-delay-seconds: 15
 
       # index.html 指向新的打包檔名，CloudFront 上的舊 index.html 要清掉
       - name: Invalidate CloudFront
@@ -79,12 +81,17 @@ jobs:
             --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
             --paths "/" "/index.html"
 
+      # 除了健康檢查，也實際查一條跨運具路線：健康檢查 200 只代表程式活著，
+      # 曾發生過路網缺資料、所有跨區查詢都回 0 條路線但健康檢查仍是 200 的情況
       - name: Smoke test
         run: |
           for i in $(seq 1 10); do
-            if curl -fsS "${{ vars.APP_URL }}/api/health"; then
-              echo; echo "Smoke test passed"; exit 0
+            routes=$(curl -fsS -X POST "${{ vars.APP_URL }}/api/routes/search" \
+              -H "Content-Type: application/json" \
+              -d '{"origin":"TYMC_A1","destination":"KRTC_R11"}' | jq '.routes | length' || echo 0)
+            if curl -fsS "${{ vars.APP_URL }}/api/health" && [ "${routes:-0}" -ge 1 ]; then
+              echo; echo "Smoke test passed: $routes routes (台北車站 -> 高雄車站)"; exit 0
             fi
-            echo "attempt $i failed, retrying in 10s"; sleep 10
+            echo "attempt $i failed (routes=$routes), retrying in 10s"; sleep 10
           done
           echo "Smoke test failed"; exit 1

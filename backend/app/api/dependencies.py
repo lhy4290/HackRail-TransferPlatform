@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Optional
@@ -14,13 +15,19 @@ from app.db.database import Database
 from app.models.station import Station
 from app.models.transfer import TransferStation
 from app.services.alert_manager import AlertManager
-from app.services.data_ingestion import DEFAULT_REQUEST_INTERVAL_SECONDS, ingest_network
+from app.services.data_ingestion import (
+    DEFAULT_REQUEST_INTERVAL_SECONDS,
+    backfill_from_snapshot,
+    ingest_network,
+)
 from app.services.demo_snapshot import DEMO_SNAPSHOT_PATH, StaticAlertSource, load_demo_snapshot
 from app.services.liveboard_service import LiveBoardService
 from app.services.risk_predictor import RiskPredictor
 from app.services.route_planner import RoutePlanner
 from app.services.transfer_seed import resolve_transfer_seeds
 from app.services.transport_graph import TransportGraph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -93,9 +100,19 @@ async def build_app_state_from_tdx(client_id: str, client_secret: str) -> AppSta
     ]
 
     stations_by_id: Dict[str, Station] = {}
-    await ingest_network(
+    incomplete_modes = await ingest_network(
         adapters, graph, stations_by_id, request_interval_seconds=DEFAULT_REQUEST_INTERVAL_SECONDS
     )
+    if incomplete_modes and DEMO_SNAPSHOT_PATH.exists():
+        snapshot = load_demo_snapshot()
+        added = backfill_from_snapshot(
+            incomplete_modes, graph, stations_by_id, snapshot.stations, snapshot.edges
+        )
+        logger.warning(
+            "TDX 擷取不完整的運具 %s，已以快照補上 %d 條路段",
+            sorted(m.value for m in incomplete_modes),
+            added,
+        )
 
     transfers = resolve_transfer_seeds(stations_by_id)
     transfers_by_id: Dict[str, TransferStation] = {}
