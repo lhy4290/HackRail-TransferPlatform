@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram id="hackrail-aws" name="HackRail AWS Architecture">
-    <mxGraphModel dx="916" dy="598" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1420" pageHeight="800" math="0" shadow="0">
+    <mxGraphModel dx="528" dy="345" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1420" pageHeight="800" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -97,14 +97,23 @@
         <mxCell id="e_igw_tdx" edge="1" parent="1" source="igw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#ED7100;fontSize=11;" target="tdx" value="HTTPS（OAuth2）">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_ecr_b" edge="1" parent="1" source="ecr" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeColor=#545B64;fontSize=10;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="g_ecs" value="pull image">
-          <mxGeometry relative="1" x="0.1059" as="geometry" />
+        <mxCell id="e_ecr_b" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeColor=#545B64;fontSize=10;entryX=0.368;entryY=0.997;entryDx=0;entryDy=0;entryPerimeter=0;" target="g_ecs" value="pull image">
+          <mxGeometry relative="1" x="0.1014" as="geometry">
+            <mxPoint x="425" y="640" as="sourcePoint" />
+            <mxPoint x="710" y="501.0000000000001" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e_sec_b" edge="1" parent="1" source="secrets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeColor=#DD344C;fontSize=10;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="g_ecs" value="啟動時注入">
-          <mxGeometry relative="1" x="0.1765" as="geometry" />
+        <mxCell id="e_sec_b" edge="1" parent="1" source="secrets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeColor=#DD344C;fontSize=10;" value="啟動時注入">
+          <mxGeometry relative="1" x="0.2957" as="geometry">
+            <mxPoint x="710" y="500" as="targetPoint" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="e_b_cw" edge="1" parent="1" source="g_ecs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeColor=#E7157B;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="cloudwatch" value="日誌">
-          <mxGeometry relative="1" as="geometry" />
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="760" y="501" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="e_cw_sns" edge="1" parent="1" source="cloudwatch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#E7157B;fontSize=10;" target="sns" value="告警">
           <mxGeometry relative="1" as="geometry" />
