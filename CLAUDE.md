@@ -19,6 +19,14 @@ Because the competition submission won't ship real TDX credentials, there's a th
 - `app/api/dependencies.build_demo_app_state()` loads that snapshot with no network calls at all, and is used automatically by `main.py`'s lifespan whenever `TDX_CLIENT_ID`/`TDX_CLIENT_SECRET` are absent (the case when the repo is submitted without `.env`) — this is `AppState.visible_station_ids`, which `GET /api/stations` filters by so the frontend dropdown only ever offers the curated whitelist, while the underlying graph keeps full connectivity so any combination among them resolves a real route.
 - Kaohsiung MRT's Red/Orange interchange (美麗島, R10/O5) isn't in the curated whitelist: the graph has no same-mode line-interchange edges for stations sharing one physical building under two different line codes, so it's unreachable from the rest of the curated set — a genuine gap, not specific to demo mode.
 
+### Cloud deployment (AWS)
+
+Deployed to AWS ECS Fargate in `ap-east-2` behind ALB + CloudFront; all infra is Terraform in `infra/` (state in S3 via `infra/bootstrap/`), step-by-step runbook in `infra/README.md`, architecture/rationale in `docs/cloud-architecture.md`. CI (`.github/workflows/ci.yml`) runs on PRs; `deploy.yml` runs on push to `master` and deploys via GitHub OIDC (no stored AWS keys). Things that bit us and must stay true:
+- `build_app_state_from_tdx()` must create the DB schema **before** ingestion — every TDX call logs to `api_call_logs`, and a fresh container has no tables.
+- The ECS service ignores `task_definition` changes in Terraform (`lifecycle.ignore_changes`) — image versions are owned by CI/CD, not `terraform apply`.
+- The OIDC trust policy accepts both GitHub `sub` formats (name-only and `owner@id/repo@id`); `master` has branch protection, so infra fixes also go through PRs.
+- Third-party GitHub Actions are pinned to commit SHAs.
+
 ## Commands
 
 ### Backend (`backend/`, Python 3.11+, venv at `backend/.venv`)
