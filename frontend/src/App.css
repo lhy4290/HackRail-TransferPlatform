@@ -637,6 +637,12 @@
   min-height: 320px;
 }
 
+/* OSM's standard tiles are light; invert them to match the dark UI.
+   Only the tile layer is filtered, so route polylines keep their real colors. */
+.dark-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+
 .transfer-info-panel {
   position: absolute;
   top: 0.5rem;
